@@ -116,6 +116,9 @@ function updateHabit() {
                         if (!dataCurrentDate.isSame(currentDate)) {
                             updateData.state = stateEnum.doing;
                             updateData.currentDate = currentDate.toISOString();
+                            if (!data.isYesNoTask) {
+                                updateData.currentValue = 0;
+                            }
                             isNeedUpdate = true;
                         } else {
                             if (currentDateTime.isAfter(dataDueTime) && dataState == stateEnum.doing) {
