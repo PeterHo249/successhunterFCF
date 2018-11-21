@@ -19,7 +19,8 @@ firestore.settings(settings);
 const stateEnum = {
     doing: 0,
     done: 1,
-    failed: 2
+    failed: 2,
+    notToday: 3
 };
 
 const repetationEnum = {
@@ -122,6 +123,11 @@ function updateHabit() {
                                 updateData.isInStreak = false;
                                 isNeedUpdate = true;
                             }
+                        }
+                    } else {
+                        if (data.state != stateEnum.notToday) {
+                            updateData.state = stateEnum.notToday;
+                            isNeedUpdate = true;
                         }
                     }
 
