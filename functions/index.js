@@ -47,23 +47,18 @@ exports.minute_job = functions.pubsub.topic('minute-tick').onPublish((message) =
     return true;
 });
 
-// Set date in format DD/MM/yyyy 00:00
-function normalizeDate(sourceDate) {
-    return new moment(`${sourceDate.date}/${sourceDate.month + 1}/${sourceDate.year}`, 'DD/MM/yyyy');
-}
-
-// Set date in format currentDate HH:mm
-function normalizeTime(sourceTime) {
-    return new moment(`${sourceTime.hour()}:${sourceTime.minute()}`, 'HH:mm');
-}
-
 // Check if the task must be done today
 function isDeadlineToday(data, dataCurrentDate, currentDate) {
+    console.log('in isDeadlineToday');
+    console.log(dataCurrentDate);
+    console.log(currentDate);
     if (dataCurrentDate.isSame(currentDate)) {
         return true;
     }
 
     const dataRepetationType = data.repetationType;
+    console.log(dataRepetationType);
+    console.log(dataRepetationType == repetationEnum.dayOfWeek);
     switch (dataRepetationType) {
         case repetationEnum.everyDay:
             return true;
@@ -77,6 +72,10 @@ function isDeadlineToday(data, dataCurrentDate, currentDate) {
             }
         case repetationEnum.dayOfWeek:
             let days = data.daysOfWeek;
+            console.log('in repetationEnum.dayOfWeek');
+            console.log(days);
+            console.log(dayOfWeekRefs[currentDate.day()]);
+            console.log(days.indexOf(dayOfWeekRefs[currentDate.day()]) != -1);
             if (days.indexOf(dayOfWeekRefs[currentDate.day()]) != -1) {
                 return true;
             } else {
@@ -89,7 +88,7 @@ function isDeadlineToday(data, dataCurrentDate, currentDate) {
 
 function updateHabit() {
     const currentDateTime = moment();
-    const currentDate = normalizeDate(currentDateTime);
+    const currentDate = moment(currentDateTime.format('L'));
     firestore.getCollections().then((collectionRefs) => {
         collectionRefs.forEach((collectionRef) => {
             let query = firestore.collection(collectionRef.id).doc('habits').collection('habits');
@@ -98,11 +97,14 @@ function updateHabit() {
                 for (let doc of docs) {
                     // Get data
                     const data = doc.data();
-                    let dataDueTime = normalizeTime(new moment(data.dueTime));
-
+                    let dataDueTime = moment(moment(data.dueTime).format('LT'), 'h:mm a');
+                    console.log('Due time:');
+                    console.log(dataDueTime.toString());
                     let dataState = data.state;
-                    let dataStreak = data.streak;
-                    let dataCurrentDate = normalizeDate(new moment(data.currentDate));
+                    let dataCurrentDate = moment(moment(data.currentDate).format('L'));
+                    console.log('in doc loop');
+                    console.log(data.currentDate);
+                    console.log(dataCurrentDate.toString());
 
                     // Update info
                     let updateData = {};
@@ -110,11 +112,22 @@ function updateHabit() {
 
                     // Reset state
                     if (isDeadlineToday(data, dataCurrentDate, currentDate)) {
-
+                        if (!dataCurrentDate.isSame(currentDate)) {
+                            updateData.state = stateEnum.doing;
+                            updateData.currentDate = currentDate.toISOString();
+                            isNeedUpdate = true;
+                        } else {
+                            if (currentDateTime.isAfter(dataDueTime) && dataState == stateEnum.doing) {
+                                updateData.state = stateEnum.failed;
+                                updateData.isInStreak = false;
+                                isNeedUpdate = true;
+                            }
+                        }
                     }
 
                     // Trigger update
                     if (isNeedUpdate) {
+                        console.log(updateData);
                         doc.ref.update(updateData, {
                             merge: true
                         });
@@ -132,13 +145,48 @@ function updateHabit() {
 }
 
 function updateGoal() {
+    const currentDateTime = moment();
+    const currentDate = moment(currentDateTime.format('L'));
     firestore.getCollections().then((collectionRefs) => {
         collectionRefs.forEach((collectionRef) => {
             let query = firestore.collection(collectionRef.id).doc('goals').collection('goals');
             query.get().then(querySnapshot => {
                 let docs = querySnapshot.docs;
                 for (let doc of docs) {
-                    //console.log(`this is document in path: ${doc.ref.path} has title ${doc.data().title} due on ${new Date(doc.data().dueTime).toString()}`);
+                    const goal = doc.data();
+                    const goalTargetDate = moment(moment(goal.targetDate).format('L'));
+                    const goalState = goal.state;
+
+                    // Update info
+                    let updateData = {};
+                    let isNeedUpdate = false;
+
+                    if (currentDate.isAfter(goalTargetDate)) {
+                        if (goalState == stateEnum.doing) {
+                            updateData.state = stateEnum.failed;
+                            isNeedUpdate = true;
+                        }
+                    } else {
+                        let milestones = goal.milestones;
+
+                        for (let milestone of milestones) {
+                            const milestoneTargetDate = moment(moment(milestone.targetDate).format('L'));
+                            const milestoneState = milestone.state;
+                            if (currentDate.isAfter(milestoneTargetDate) && milestoneState == stateEnum.doing) {
+                                milestone.state = stateEnum.failed;
+                                isNeedUpdate = true;
+                            }
+                        }
+
+                        updateData.milestones = milestones;
+                    }
+
+                    if (isNeedUpdate) {
+                        console.log(updateData);
+                        doc.ref.update(updateData, {
+                            merge: true
+                        });
+                    }
                 }
                 return true;
             }).catch((error) => {
