@@ -1,6 +1,6 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
-const moment = require('moment');
+const moment = require('moment-timezone');
 
 // Setup momentjs
 moment().format();
@@ -66,7 +66,7 @@ function isDeadlineToday(data, dataCurrentDate, currentDate) {
         case repetationEnum.period:
             let period = data.period;
             dataCurrentDate = dataCurrentDate.add(period, 'days');
-            if (dateCurrentDate.isSame(currentDate)) {
+            if (dataCurrentDate.isSame(currentDate)) {
                 return true;
             } else {
                 return false;
@@ -88,7 +88,9 @@ function isDeadlineToday(data, dataCurrentDate, currentDate) {
 }
 
 function updateHabit() {
-    const currentDateTime = moment();
+    const currentDateTime = moment().tz('Asia/Ho_Chi_Minh');
+    console.log('Current date time in ho chi minh');
+    console.log(currentDateTime.toString());
     const currentDate = moment(currentDateTime.format('L'));
     firestore.getCollections().then((collectionRefs) => {
         collectionRefs.forEach((collectionRef) => {
@@ -154,7 +156,7 @@ function updateHabit() {
 }
 
 function updateGoal() {
-    const currentDateTime = moment();
+    const currentDateTime = moment().tz('Aisa/Ho_Chi_Minh');
     const currentDate = moment(currentDateTime.format('L'));
     firestore.getCollections().then((collectionRefs) => {
         collectionRefs.forEach((collectionRef) => {
