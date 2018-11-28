@@ -50,16 +50,11 @@ exports.minute_job = functions.pubsub.topic('minute-tick').onPublish((message) =
 
 // Check if the task must be done today
 function isDeadlineToday(data, dataCurrentDate, currentDate) {
-    console.log('in isDeadlineToday');
-    console.log(dataCurrentDate);
-    console.log(currentDate);
     if (dataCurrentDate.isSame(currentDate)) {
         return true;
     }
 
     const dataRepetationType = data.repetationType;
-    console.log(dataRepetationType);
-    console.log(dataRepetationType == repetationEnum.dayOfWeek);
     switch (dataRepetationType) {
         case repetationEnum.everyDay:
             return true;
@@ -73,10 +68,6 @@ function isDeadlineToday(data, dataCurrentDate, currentDate) {
             }
         case repetationEnum.dayOfWeek:
             let days = data.daysOfWeek;
-            console.log('in repetationEnum.dayOfWeek');
-            console.log(days);
-            console.log(dayOfWeekRefs[currentDate.day()]);
-            console.log(days.indexOf(dayOfWeekRefs[currentDate.day()]) != -1);
             if (days.indexOf(dayOfWeekRefs[currentDate.day()]) != -1) {
                 return true;
             } else {
@@ -89,8 +80,6 @@ function isDeadlineToday(data, dataCurrentDate, currentDate) {
 
 function updateHabit() {
     const currentDateTime = moment().tz('Asia/Ho_Chi_Minh');
-    console.log('Current date time in ho chi minh');
-    console.log(currentDateTime.toString());
     const currentDate = moment(currentDateTime.format('L'));
     firestore.getCollections().then((collectionRefs) => {
         collectionRefs.forEach((collectionRef) => {
@@ -100,20 +89,29 @@ function updateHabit() {
                 for (let doc of docs) {
                     // Get data
                     const data = doc.data();
-                    let dataDueTime = moment(moment(data.dueTime).format('LT'), 'h:mm a');
+                    // TODO: Fix due time
+                    let currentDueTime = moment(data.dueTime);
+                    currentDueTime.date(currentDate.date());
+                    currentDueTime.month(currentDate.month());
+                    currentDueTime.year(currentDate.year());
+                    let dataDueTime = currentDueTime;
                     console.log('Due time:');
                     console.log(dataDueTime.toString());
                     let dataState = data.state;
                     let dataCurrentDate = moment(moment(data.currentDate).format('L'));
-                    console.log('in doc loop');
-                    console.log(data.currentDate);
-                    console.log(dataCurrentDate.toString());
 
                     // Update info
                     let updateData = {};
                     let isNeedUpdate = false;
 
                     // Reset state
+                    if (!dataDueTime.isSame(moment(data.dueTime))) {
+                        updateData.dueTime = dataDueTime.toISOString();
+                        // TODO: Is need update state here, peter?????
+                        //updateData.state = stateEnum.doing;
+                        isNeedUpdate = true;
+                    }
+                    
                     if (isDeadlineToday(data, dataCurrentDate, currentDate)) {
                         if (!dataCurrentDate.isSame(currentDate)) {
                             updateData.state = stateEnum.doing;
