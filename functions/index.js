@@ -1,9 +1,6 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
-const moment = require('moment-timezone');
-
-// Setup momentjs
-moment().format();
+const moment = require('moment');
 
 // Setup admin app
 admin.initializeApp(functions.config().firebase);
@@ -48,6 +45,11 @@ exports.minute_job = functions.pubsub.topic('minute-tick').onPublish((message) =
     return true;
 });
 
+exports.minute_job = functions.pubsub.topic('day-tick').onPublish((message) => {
+    countTask();
+    return true;
+});
+
 // Check if the task must be done today
 function isDeadlineToday(data, dataCurrentDate, currentDate) {
     if (dataCurrentDate.isSame(currentDate)) {
@@ -79,7 +81,7 @@ function isDeadlineToday(data, dataCurrentDate, currentDate) {
 }
 
 function updateHabit() {
-    const currentDateTime = moment().tz('Asia/Ho_Chi_Minh');
+    const currentDateTime = moment();
     const currentDate = moment(currentDateTime.format('L'));
     firestore.getCollections().then((collectionRefs) => {
         collectionRefs.forEach((collectionRef) => {
@@ -95,8 +97,6 @@ function updateHabit() {
                     currentDueTime.month(currentDate.month());
                     currentDueTime.year(currentDate.year());
                     let dataDueTime = currentDueTime;
-                    console.log('Due time:');
-                    console.log(dataDueTime.toString());
                     let dataState = data.state;
                     let dataCurrentDate = moment(moment(data.currentDate).format('L'));
 
@@ -111,7 +111,7 @@ function updateHabit() {
                         //updateData.state = stateEnum.doing;
                         isNeedUpdate = true;
                     }
-                    
+
                     if (isDeadlineToday(data, dataCurrentDate, currentDate)) {
                         if (!dataCurrentDate.isSame(currentDate)) {
                             updateData.state = stateEnum.doing;
@@ -154,7 +154,7 @@ function updateHabit() {
 }
 
 function updateGoal() {
-    const currentDateTime = moment().tz('Aisa/Ho_Chi_Minh');
+    const currentDateTime = moment();
     const currentDate = moment(currentDateTime.format('L'));
     firestore.getCollections().then((collectionRefs) => {
         collectionRefs.forEach((collectionRef) => {
@@ -203,6 +203,105 @@ function updateGoal() {
             })
         })
         return true;
+    }).catch((error) => {
+        console.log(`Error: ${error}`);
+    })
+}
+
+async function countTask() {
+    let habitCount = {
+        date: moment().date(),
+        attainedCount: 0,
+        doingCount: 0,
+        failedCount: 0
+    }
+    let goalCount = {
+        date: moment().date(),
+        attainedCount: 0,
+        doingCount: 0,
+        failedCount: 0
+    }
+
+    var promises = [];
+
+    firestore.getCollections().then((collectionRefs) => {
+        collectionRefs.forEach((collectionRef) => {
+            let query = firestore.collection(collectionRef.id).doc('habits').collection('habits');
+            let habitPromise = query.get().then(querySnapshot => {
+                let docs = querySnapshot.docs;
+                for (let doc of docs) {
+                    const data = doc.data();
+                    switch (data.state) {
+                        case stateEnum.doing:
+                            habitCount.doingCount++;
+                            break;
+                        case stateEnum.done:
+                            habitCount.attainedCount++;
+                            break;
+                        case stateEnum.failed:
+                            habitCount.failedCount++;
+                            break;
+                        default:
+                            break;
+                    }
+                }
+                isHabitCountDone = true;
+            })
+            promises.push(habitPromise);
+
+            query = firestore.collection(collectionRef.id).doc('goals').collection('goals');
+            let goalPromise = query.get().then(querySnapshot => {
+                let docs = querySnapshot.docs;
+                for (let doc of docs) {
+                    const data = doc.data();
+                    switch (data.state) {
+                        case stateEnum.doing:
+                            goalCount.doingCount++;
+                            break;
+                        case stateEnum.done:
+                            goalCount.attainedCount++;
+                            break;
+                        case stateEnum.failed:
+                            goalCount.failedCount++;
+                            break;
+                        default:
+                            break;
+                    }
+                }
+                isGoalCountDone = true;
+            })
+            promises.push(goalPromise);
+
+            Promise.all(promises).then(() => {
+                firestore.collection(collectionRef.id).doc('info').get().then(documentSnapshot => {
+                    const data = documentSnapshot.data();
+                    if (data != undefined) {
+                        let habitCounts = data.habitCounts;
+                        let goalCounts = data.goalCounts;
+
+                        if (habitCounts.length >= 10) {
+                            habitCounts.splice(0, 1);
+                        }
+                        if (goalCounts.length >= 10) {
+                            goalCounts.splice(0, 1);
+                        }
+
+                        habitCounts.push(habitCount);
+                        goalCounts.push(goalCount);
+
+                        documentSnapshot.ref.update({
+                            habitCounts: habitCounts,
+                            goalCounts: goalCounts
+                        }, {
+                            merge: true
+                        })
+
+                        console.log('>>>>>>>>>> Daily tick done <<<<<<<<<<');
+                    }
+                })
+            })
+
+        })
     }).catch((error) => {
         console.log(`Error: ${error}`);
     })
