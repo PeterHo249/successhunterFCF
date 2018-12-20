@@ -45,7 +45,7 @@ exports.minute_job = functions.pubsub.topic('minute-tick').onPublish((message) =
     return true;
 });
 
-exports.minute_job = functions.pubsub.topic('day-tick').onPublish((message) => {
+exports.day_job = functions.pubsub.topic('day-tick').onPublish((message) => {
     countTask();
     return true;
 });
