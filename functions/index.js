@@ -60,6 +60,40 @@ exports.day_job = functions.pubsub.topic("day-tick").onPublish(message => {
   return true;
 });
 
+exports.get_compact_user_info = functions.https.onRequest((req, res) => {
+  let users = {
+    users: []
+  };
+
+  let infoPromise = [];
+
+  firestore.getCollections().then(collectionRefs => {
+    collectionRefs.forEach(collectionRef => {
+      if (collectionRef.id == 'coops') return;
+      console.log(`>>>>>>> ${collectionRef.id}`);
+      let query = firestore.collection(collectionRef.id).doc("info");
+      let promise = query.get().then(documentSnapshot => {
+        let data = documentSnapshot.data();
+        console.log('>>>>>>>>>>>>>>>');
+        console.log(data);
+        if (data != undefined) {
+          let user = {
+            uid: data.uid,
+            photoUrl: data.photoUrl,
+            displayName: data.displayName,
+          };
+          users.users.push(user);
+        }
+      });
+      infoPromise.push(promise);
+    });
+
+    Promise.all(infoPromise).then(() => {
+      res.status(200).send(JSON.stringify(users));
+    });
+  });
+});
+
 // Check if the task must be done today
 function isDeadlineToday(data, dataCurrentDate, currentDate) {
   if (dataCurrentDate.isSame(currentDate)) {
@@ -101,8 +135,9 @@ function updateHabit() {
     .getCollections()
     .then(collectionRefs => {
       collectionRefs.forEach(collectionRef => {
+        if (collectionRef.id == 'coops') return;
         let tokens = {};
-        let infoQuery = firestore.collection(collectionRef.id).doc('info');
+        let infoQuery = firestore.collection(collectionRef.id).doc("info");
         let infoPromise = infoQuery.get().then(documentSnapshot => {
           const infoData = documentSnapshot.data();
           tokens = infoData.fcmToken;
@@ -127,9 +162,7 @@ function updateHabit() {
                 currentDueTime.year(currentDate.year());
                 let dataDueTime = currentDueTime;
                 let dataState = data.state;
-                let dataCurrentDate = moment(
-                  moment(data.currentDate)
-                );
+                let dataCurrentDate = moment(moment(data.currentDate));
                 dataCurrentDate.hour(0);
                 dataCurrentDate.minute(0);
                 dataCurrentDate.second(0);
@@ -157,14 +190,20 @@ function updateHabit() {
                     isNeedUpdate = true;
                   } else {
                     // Check to send notification
-                    let timeDiff = dataDueTime.diff(currentDateTime, "minute", true);
+                    let timeDiff = dataDueTime.diff(
+                      currentDateTime,
+                      "minute",
+                      true
+                    );
 
                     if (timeDiff > 4 && timeDiff <= 5) {
                       for (let token of tokens) {
                         const notifiedMessage = {
                           notification: {
                             title: "Habit",
-                            body: `Your task "${data.title}" is running out of time.`
+                            body: `Your task "${
+                              data.title
+                            }" is running out of time.`
                           },
                           data: {
                             category: "Habit",
@@ -173,7 +212,7 @@ function updateHabit() {
                           token: token,
                           android: {
                             notification: {
-                              click_action: 'FLUTTER_NOTIFICATION_CLICK'
+                              click_action: "FLUTTER_NOTIFICATION_CLICK"
                             }
                           }
                         };
@@ -181,7 +220,10 @@ function updateHabit() {
                           .messaging()
                           .send(notifiedMessage)
                           .then(response => {
-                            console.log("Successfully sent message: ", response);
+                            console.log(
+                              "Successfully sent message: ",
+                              response
+                            );
                           })
                           .catch(error => {
                             console.log("Error sending message: ", error);
@@ -239,8 +281,9 @@ function updateGoal() {
     .getCollections()
     .then(collectionRefs => {
       collectionRefs.forEach(collectionRef => {
+        if (collectionRef.id == 'coops') return;
         let tokens = {};
-        let infoQuery = firestore.collection(collectionRef.id).doc('info');
+        let infoQuery = firestore.collection(collectionRef.id).doc("info");
         let infoPromise = infoQuery.get().then(documentSnapshot => {
           const infoData = documentSnapshot.data();
           tokens = infoData.fcmToken;
@@ -257,9 +300,7 @@ function updateGoal() {
               let docs = querySnapshot.docs;
               for (let doc of docs) {
                 const goal = doc.data();
-                const goalTargetDate = moment(
-                  moment(goal.targetDate)
-                );
+                const goalTargetDate = moment(moment(goal.targetDate));
                 goalTargetDate.hour(0);
                 goalTargetDate.minute(0);
                 goalTargetDate.second(0);
@@ -271,14 +312,19 @@ function updateGoal() {
                 let isNeedUpdate = false;
 
                 // Check to send notification
-                let timeDiff = goalTargetDate.diff(currentDateTime, "minute", true);
+                let timeDiff = goalTargetDate.diff(
+                  currentDateTime,
+                  "minute",
+                  true
+                );
                 if (timeDiff > 1440 && timeDiff <= 1441) {
-
                   for (let token of tokens) {
                     const notifiedMessage = {
                       notification: {
                         title: "Goal",
-                        body: `Your goal "${data.title}" is running out of time.`
+                        body: `Your goal "${
+                          data.title
+                        }" is running out of time.`
                       },
                       data: {
                         category: "Goal",
@@ -287,7 +333,7 @@ function updateGoal() {
                       token: token,
                       android: {
                         notification: {
-                          click_action: 'FLUTTER_NOTIFICATION_CLICK'
+                          click_action: "FLUTTER_NOTIFICATION_CLICK"
                         }
                       }
                     };
@@ -322,14 +368,20 @@ function updateGoal() {
                     const milestoneState = milestone.state;
 
                     // Check to send notification
-                    let timeDiff = goalTargetDate.diff(currentDateTime, "minute", true);
+                    let timeDiff = goalTargetDate.diff(
+                      currentDateTime,
+                      "minute",
+                      true
+                    );
 
                     if (timeDiff > 1440 && timeDiff <= 1441) {
                       for (let token of tokens) {
                         const notifiedMessage = {
                           notification: {
                             title: "Goal",
-                            body: `Your milestone "${milestone.title}" is running out of time.`
+                            body: `Your milestone "${
+                              milestone.title
+                            }" is running out of time.`
                           },
                           data: {
                             category: "Goal",
@@ -338,7 +390,7 @@ function updateGoal() {
                           token: token,
                           android: {
                             notification: {
-                              click_action: 'FLUTTER_NOTIFICATION_CLICK'
+                              click_action: "FLUTTER_NOTIFICATION_CLICK"
                             }
                           }
                         };
@@ -346,7 +398,10 @@ function updateGoal() {
                           .messaging()
                           .send(notifiedMessage)
                           .then(response => {
-                            console.log("Successfully sent message: ", response);
+                            console.log(
+                              "Successfully sent message: ",
+                              response
+                            );
                           })
                           .catch(error => {
                             console.log("Error sending message: ", error);
@@ -377,7 +432,7 @@ function updateGoal() {
             .catch(error => {
               console.log(`Error: ${error}`);
             });
-        })
+        });
       });
       return true;
     })
@@ -406,6 +461,7 @@ async function countTask() {
     .getCollections()
     .then(collectionRefs => {
       collectionRefs.forEach(collectionRef => {
+        if (collectionRef.id == 'coops') return;
         let query = firestore
           .collection(collectionRef.id)
           .doc("habits")
@@ -479,12 +535,15 @@ async function countTask() {
                 habitCounts.push(habitCount);
                 goalCounts.push(goalCount);
 
-                documentSnapshot.ref.update({
-                  habitCounts: habitCounts,
-                  goalCounts: goalCounts
-                }, {
-                  merge: true
-                });
+                documentSnapshot.ref.update(
+                  {
+                    habitCounts: habitCounts,
+                    goalCounts: goalCounts
+                  },
+                  {
+                    merge: true
+                  }
+                );
 
                 console.log(">>>>>>>>>> Daily tick done <<<<<<<<<<");
               }
