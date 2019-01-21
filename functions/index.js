@@ -150,6 +150,11 @@ exports.invite_participants = functions.https.onRequest((req, res) => {
             notification: {
               click_action: "FLUTTER_NOTIFICATION_CLICK"
             }
+          },
+          apns: {
+            headers: {
+              'apns-priority': '10'
+            }
           }
         };
         admin
@@ -288,6 +293,11 @@ function updateHabit() {
                             notification: {
                               click_action: "FLUTTER_NOTIFICATION_CLICK"
                             }
+                          },
+                          apns: {
+                            headers: {
+                              'apns-priority': '10'
+                            }
                           }
                         };
                         admin
@@ -409,6 +419,11 @@ function updateGoal() {
                         notification: {
                           click_action: "FLUTTER_NOTIFICATION_CLICK"
                         }
+                      },
+                      apns: {
+                        headers: {
+                          'apns-priority': '10'
+                        }
                       }
                     };
                     admin
@@ -465,6 +480,11 @@ function updateGoal() {
                           android: {
                             notification: {
                               click_action: "FLUTTER_NOTIFICATION_CLICK"
+                            }
+                          },
+                          apns: {
+                            headers: {
+                              'apns-priority': '10'
                             }
                           }
                         };
