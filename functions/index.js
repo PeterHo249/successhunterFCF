@@ -26,6 +26,11 @@ const repetationEnum = {
   period: "Period"
 };
 
+const invitationStatusEnum = {
+  beInvited: "beInvited",
+  accepted: "accepted"
+};
+
 const dayOfWeekEnum = {
   monday: "Monday",
   tuesday: "Tuesday",
@@ -69,18 +74,16 @@ exports.get_compact_user_info = functions.https.onRequest((req, res) => {
 
   firestore.getCollections().then(collectionRefs => {
     collectionRefs.forEach(collectionRef => {
-      if (collectionRef.id == 'coops') return;
+      if (collectionRef.id == "coops") return;
       console.log(`>>>>>>> ${collectionRef.id}`);
       let query = firestore.collection(collectionRef.id).doc("info");
       let promise = query.get().then(documentSnapshot => {
         let data = documentSnapshot.data();
-        console.log('>>>>>>>>>>>>>>>');
-        console.log(data);
         if (data != undefined) {
           let user = {
             uid: data.uid,
             photoUrl: data.photoUrl,
-            displayName: data.displayName,
+            displayName: data.displayName
           };
           users.users.push(user);
         }
@@ -91,6 +94,77 @@ exports.get_compact_user_info = functions.https.onRequest((req, res) => {
     Promise.all(infoPromise).then(() => {
       res.status(200).send(JSON.stringify(users));
     });
+  });
+});
+
+exports.invite_participants = functions.https.onRequest((req, res) => {
+  let reqBody = req.body;
+
+  let inviter = undefined;
+  let coop = undefined;
+  let inviteds = [];
+
+  let promises = [];
+  let inviterInfoPromise = firestore
+    .collection(reqBody.inviterUid)
+    .doc("info")
+    .get()
+    .then(documentSnapshot => {
+      inviter = documentSnapshot.data();
+    });
+  promises.push(inviterInfoPromise);
+  let coopInfoPromise = firestore
+    .collection("coops")
+    .doc(reqBody.coopId)
+    .get()
+    .then(documentSnapshot => {
+      coop = documentSnapshot.data();
+    });
+  promises.push(coopInfoPromise);
+  reqBody.invitedUids.forEach(uid => {
+    let query = firestore.collection(uid).doc("info");
+    let promise = query.get().then(documentSnapshot => {
+      inviteds.push(documentSnapshot.data());
+    });
+    promises.push(promise);
+  });
+
+  Promise.all(promises).then(() => {
+    inviteds.forEach(user => {
+      user.fcmToken.forEach(token => {
+        const notifiedMessage = {
+          notification: {
+            title: "Invitation",
+            body: `You are invited to attain goal "${coop.title}" with "${
+              inviter.displayName
+            }. Do you accept?"`
+          },
+          data: {
+            category: "Coop",
+            status: invitationStatusEnum.beInvited,
+            coopId: reqBody.coopId,
+            inviterUid: reqBody.inviterUid
+          },
+          token: token,
+          android: {
+            notification: {
+              click_action: "FLUTTER_NOTIFICATION_CLICK"
+            }
+          }
+        };
+        admin
+          .messaging()
+          .send(notifiedMessage)
+          .then(response => {
+            console.log("Successfully sent message: ", response);
+          })
+          .catch(error => {
+            console.log("Error sending message: ", error);
+          });
+      });
+    });
+
+    res.status(200).send('Done');
   });
 });
 
@@ -135,7 +209,7 @@ function updateHabit() {
     .getCollections()
     .then(collectionRefs => {
       collectionRefs.forEach(collectionRef => {
-        if (collectionRef.id == 'coops') return;
+        if (collectionRef.id == "coops") return;
         let tokens = {};
         let infoQuery = firestore.collection(collectionRef.id).doc("info");
         let infoPromise = infoQuery.get().then(documentSnapshot => {
@@ -281,7 +355,7 @@ function updateGoal() {
     .getCollections()
     .then(collectionRefs => {
       collectionRefs.forEach(collectionRef => {
-        if (collectionRef.id == 'coops') return;
+        if (collectionRef.id == "coops") return;
         let tokens = {};
         let infoQuery = firestore.collection(collectionRef.id).doc("info");
         let infoPromise = infoQuery.get().then(documentSnapshot => {
@@ -461,7 +535,7 @@ async function countTask() {
     .getCollections()
     .then(collectionRefs => {
       collectionRefs.forEach(collectionRef => {
-        if (collectionRef.id == 'coops') return;
+        if (collectionRef.id == "coops") return;
         let query = firestore
           .collection(collectionRef.id)
           .doc("habits")
