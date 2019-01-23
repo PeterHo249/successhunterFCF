@@ -26,9 +26,9 @@ const repetationEnum = {
   period: "Period"
 };
 
-const invitationStatusEnum = {
+const coopNotificationEnum = {
   beInvited: "beInvited",
-  accepted: "accepted"
+  notified: "notified"
 };
 
 const dayOfWeekEnum = {
@@ -57,6 +57,7 @@ exports.minute_job = functions.pubsub
   .onPublish(message => {
     updateHabit();
     updateGoal();
+    updateCoop();
     return true;
   });
 
@@ -141,7 +142,7 @@ exports.invite_participants = functions.https.onRequest((req, res) => {
           },
           data: {
             category: "Coop",
-            status: invitationStatusEnum.beInvited,
+            status: coopNotificationEnum.beInvited,
             coopId: reqBody.coopId,
             inviterUid: reqBody.inviterUid
           },
@@ -153,7 +154,7 @@ exports.invite_participants = functions.https.onRequest((req, res) => {
           },
           apns: {
             headers: {
-              'apns-priority': '10'
+              "apns-priority": "10"
             }
           }
         };
@@ -169,7 +170,7 @@ exports.invite_participants = functions.https.onRequest((req, res) => {
       });
     });
 
-    res.status(200).send('Done');
+    res.status(200).send("Done");
   });
 });
 
@@ -296,7 +297,7 @@ function updateHabit() {
                           },
                           apns: {
                             headers: {
-                              'apns-priority': '10'
+                              "apns-priority": "10"
                             }
                           }
                         };
@@ -422,7 +423,7 @@ function updateGoal() {
                       },
                       apns: {
                         headers: {
-                          'apns-priority': '10'
+                          "apns-priority": "10"
                         }
                       }
                     };
@@ -484,7 +485,7 @@ function updateGoal() {
                           },
                           apns: {
                             headers: {
-                              'apns-priority': '10'
+                              "apns-priority": "10"
                             }
                           }
                         };
@@ -529,6 +530,202 @@ function updateGoal() {
         });
       });
       return true;
+    })
+    .catch(error => {
+      console.log(`Error: ${error}`);
+    });
+}
+
+function updateCoop() {
+  const currentDateTime = moment();
+  const currentDate = moment();
+  currentDate.hour(0);
+  currentDate.minute(0);
+  currentDate.second(0);
+  currentDate.millisecond(0);
+
+  firestore
+    .collection("coops")
+    .get()
+    .then(querySnapshot => {
+      let docs = querySnapshot.docs;
+      for (let doc of docs) {
+        let coop = doc.data();
+        const coopTargetDate = moment(coop.targetDate);
+        coopTargetDate.hour(0);
+        coopTargetDate.minute(0);
+        coopTargetDate.second(0);
+        coopTargetDate.millisecond(0);
+        const coopMainState = coop.mainState;
+
+        let isNeedUpdate = false;
+
+        // Get all participant infos
+        let participantPromises = [];
+        let participants = [];
+        for (let uid of coop.participantUids) {
+          let infoPromise = firestore
+            .collection(uid)
+            .doc("info")
+            .get()
+            .then(documentSnapshot => {
+              participants.push(documentSnapshot.data());
+            });
+          participantPromises.push(infoPromise);
+        }
+
+        Promise.all(participantPromises).then(() => {
+          // Check to send notification
+          let timeDiff = coopTargetDate.diff(currentDateTime, "minute", true);
+          if (timeDiff > 1440 && timeDiff <= 1441) {
+            for (let participantState of coop.states) {
+              if (participantState.state == stateEnum.doing) {
+                let participant = participants.find(value => {
+                  return value.uid == participantState.uid;
+                });
+                if (participant != undefined) {
+                  for (let token of participant.fcmToken) {
+                    const notifiedMessage = {
+                      notification: {
+                        title: "Coop Goal",
+                        body: `Your coop goal "${
+                          coop.title
+                        }" is running out of time.`
+                      },
+                      data: {
+                        category: "Coop",
+                        documentId: doc.id
+                      },
+                      token: token,
+                      android: {
+                        notification: {
+                          click_action: "FLUTTER_NOTIFICATION_CLICK"
+                        }
+                      },
+                      apns: {
+                        headers: {
+                          "apns-priority": "10"
+                        }
+                      }
+                    };
+                    admin
+                      .messaging()
+                      .send(notifiedMessage)
+                      .then(response => {
+                        console.log("Successfully sent message: ", response);
+                      })
+                      .catch(error => {
+                        console.log("Error sending message: ", error);
+                      });
+                  }
+                }
+              }
+            }
+          }
+
+          // Check state for main
+          if (currentDate.isAfter(coopTargetDate)) {
+            // Fail all
+            if (coopMainState == stateEnum.doing) {
+              coop.mainState = stateEnum.failed;
+              isNeedUpdate = true;
+              for (let participantState of coop.states) {
+                if (participantState.state == stateEnum.doing) {
+                  participantState.state = stateEnum.failed;
+                }
+              }
+              for (let milestone of coop.milestones) {
+                for (let partUid of coop.participantUids) {
+                  let state = milestone.states.find(value => {
+                    return value.uid == partUid;
+                  }).state;
+                  if (state == stateEnum.doing) {
+                    state = stateEnum.failed;
+                  }
+                }
+              }
+            }
+          } else {
+            // check state for milestone
+            for (let milestone of coop.milestones) {
+              let timeDiff = moment(milestone.targetDate).diff(
+                currentDateTime,
+                "minute",
+                true
+              );
+              // notification for milestone
+              if (timeDiff > 1440 && timeDiff <= 1441) {
+                for (let uid of coop.participantUids) {
+                  if (
+                    milestone.states.find(value => {
+                      return value.uid == uid;
+                    }).state == stateEnum.doing
+                  ) {
+                    let tokens = participants.find(value => {
+                      return value.uid == uid;
+                    }).fcmToken;
+                    for (let token of tokens) {
+                      const notifiedMessage = {
+                        notification: {
+                          title: "Coop Goal",
+                          body: `Your milestone "${
+                            milestone.title
+                          }" of coop goal "${
+                            coop.title
+                          }" is running out of time.`
+                        },
+                        data: {
+                          category: "Coop",
+                          documentId: doc.id
+                        },
+                        token: token,
+                        android: {
+                          notification: {
+                            click_action: "FLUTTER_NOTIFICATION_CLICK"
+                          }
+                        },
+                        apns: {
+                          headers: {
+                            "apns-priority": "10"
+                          }
+                        }
+                      };
+                      admin
+                        .messaging()
+                        .send(notifiedMessage)
+                        .then(response => {
+                          console.log("Successfully sent message: ", response);
+                        })
+                        .catch(error => {
+                          console.log("Error sending message: ", error);
+                        });
+                    }
+                  }
+                }
+              }
+              // Check fail
+              if (currentDate.isAfter(moment(milestone.targetDate))) {
+                isNeedUpdate = true;
+                for (let uid of coop.participantUids) {
+                  let state = milestone.states.find(value => {
+                    return value.uid == uid;
+                  }).state;
+                  if (state == stateEnum.doing) {
+                    state = stateEnum.failed;
+                  }
+                }
+              }
+            }
+          }
+
+          // Update
+          if (isNeedUpdate) {
+            doc.ref.update(coop, {
+              merge: true
+            });
+          }
+        });
+      }
     })
     .catch(error => {
       console.log(`Error: ${error}`);
