@@ -66,6 +66,10 @@ exports.day_job = functions.pubsub.topic("day-tick").onPublish(message => {
   return true;
 });
 
+exports.week_job = functions.pubsub.topic("monday-tick").onPublish(message => {
+  remindGoal();
+});
+
 exports.get_compact_user_info = functions.https.onRequest((req, res) => {
   let users = {
     users: []
@@ -826,21 +830,120 @@ async function countTask() {
                 habitCounts.push(habitCount);
                 goalCounts.push(goalCount);
 
-                documentSnapshot.ref.update(
-                  {
-                    habitCounts: habitCounts,
-                    goalCounts: goalCounts
-                  },
-                  {
-                    merge: true
-                  }
-                );
+                documentSnapshot.ref.update({
+                  habitCounts: habitCounts,
+                  goalCounts: goalCounts
+                }, {
+                  merge: true
+                });
 
                 console.log(">>>>>>>>>> Daily tick done <<<<<<<<<<");
               }
             });
         });
       });
+    })
+    .catch(error => {
+      console.log(`Error: ${error}`);
+    });
+}
+
+function remindGoal() {
+  firestore
+    .getCollections()
+    .then(collectionRefs => {
+      collectionRefs.forEach(collectionRef => {
+        if (collectionRef.id == "coops") return;
+        let goalCount = 0;
+        let coopCount = 0;
+        let uid = collectionRef.id;
+        let tokens = {};
+        let infoQuery = firestore.collection(collectionRef.id).doc("info");
+        let infoPromise = infoQuery.get().then(documentSnapshot => {
+          const infoData = documentSnapshot.data();
+          tokens = infoData.fcmToken;
+        });
+
+        Promise.all([infoPromise]).then(() => {
+          // Count goal
+          let query = firestore
+            .collection(collectionRef.id)
+            .doc("goals")
+            .collection("goals");
+          let countGoalPromise = query
+            .get()
+            .then(querySnapshot => {
+              let docs = querySnapshot.docs;
+              for (let doc of docs) {
+                const goal = doc.data();
+                const goalState = goal.state;
+
+                if (goalState == stateEnum.doing) {
+                  goalCount += 1;
+                }
+              }
+              return true;
+            })
+            .catch(error => {
+              console.log(`Error: ${error}`);
+            });
+
+          // Count coop
+          query = firestore.collection("coops");
+          let countCoopPromise = query.get().then(querySnapshot => {
+            let docs = querySnapshot.docs;
+            for (let doc of docs) {
+              const coop = doc.data();
+              if (coop.participantUids.includes(uid)) {
+                if (coop.states.find((state) => state.uid == uid).state == stateEnum.doing) {
+                  coopCount += 1;
+                }
+              }
+            }
+          });
+
+          Promise.all([countGoalPromise, countCoopPromise]).then(() => {
+            for (let token of tokens) {
+              const notifiedMessage = {
+                notification: {
+                  title: "Remind",
+                  body: `You have "${
+                    goalCount
+                  }" goals and "${
+                    coopCount
+                  }" coop goals need to be done.`
+                },
+                data: {
+                  category: "None",
+                  documentId: "None"
+                },
+                token: token,
+                android: {
+                  notification: {
+                    click_action: "FLUTTER_NOTIFICATION_CLICK"
+                  }
+                },
+                apns: {
+                  headers: {
+                    "apns-priority": "10"
+                  }
+                }
+              };
+              admin
+                .messaging()
+                .send(notifiedMessage)
+                .then(response => {
+                  console.log("Successfully sent message: ", response);
+                })
+                .catch(error => {
+                  console.log("Error sending message: ", error);
+                });
+            }
+          });
+
+        });
+      });
+      return true;
     })
     .catch(error => {
       console.log(`Error: ${error}`);
